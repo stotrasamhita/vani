@@ -85,6 +85,7 @@ def text_info(stotra, clips):
         chandas = (" · ".join(SL.CHANDAS[m] for m in used)
                    if 0 < len(used) <= 3 and known >= 0.9 * len(verses) else None)   # don't show a partial list
 
+    if X: chandas = None                                      # Gītā set: no metre line (user, 2026-09-29)
     return dict(src=src, tex=tex, shown=shown, split=split, meta=meta, title=title, rom=rom,
                 composer=above or composer, speaker=below or speaker, source=source, chandas=chandas,
                 head=head, head_rom=head_rom)
