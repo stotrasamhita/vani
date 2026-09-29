@@ -8,6 +8,7 @@ Timeline (from the mix's timing sidecar and the exact cached verse durations):
   verse k starts (inside the 0.8 s pause), with 0.35 s fade-out/fade-in through black, so the
   new verse is fully visible as its chant begins. Boundaries are placed on whole frames of the
   global timeline, so there is no drift. The last slide fades out with the drone's tail.
+Texts with a word split (Gītā chapters) show it on each verse slide (slides.split_verse_tex).
 Palettes: title and colophon slides maroon, verse slides alternate aubergine / indigo. An uvāca
 ("X उवाच") is chanted before its verse and shown in gold above it on the same slide.
 Outputs out/video/<stotra>/<slug>.mp4 and <slug>_chapters.txt (YouTube chapter list).
@@ -46,11 +47,17 @@ def text_info(stotra, clips):
     file's heading/metadata, slides/names.tsv and the clips' detected metres."""
     src = clips[0].get("src") or source_tex(stotra)
     tex = open(src, encoding="utf-8").read()
-    shown = {c["seq"]: c.get("display") for c in build(src, 60, 24)}   # by position: ids depend on the corpus group; prose has none
+    piece = dict(part=clips[0].get("part"), after=clips[0].get("after"))   # a piece of the file (Gītā chapter)
+    shown = {c["seq"]: c.get("display") for c in build(src, 60, 24, **piece)}   # by position: ids depend on the corpus group; prose has none
+    split = ({c["seq"]: c.get("display") for c in build(clips[0]["split_src"], 60, 24, **piece)}
+             if clips[0].get("split_src") else {})             # word-split text, line-aligned with src (checked: same seqs)
     meta = parse_meta(tex)
+    X = SL.TEXTS.get(stotra)                                  # texts.tsv: per-text presentation (Gītā set)
+    if X:
+        meta.update({k: X[v] for k, v in (("wiki_title", "english"), ("source", "source"), ("composer", "composer")) if X[v]})
     m = next((m for pat in (r"\\sect\{([^}]*)\}", r"\\chapt\{([^}]*)\}", r"\\dnsub\{([^}]*)\}")
               if (m := re.search(pat, tex))), None)          # heading macro varies across files
-    title = m.group(1).strip() if m else None
+    title = X["title"] if X else m.group(1).strip() if m else None
     if stotra in SL.TITLES:                            # per-text override (e.g. heading is just "कथा")
         title, meta["wiki_title"] = SL.TITLES[stotra]
     if stotra in SL.TEXT_SOURCES: meta["source"] = SL.TEXT_SOURCES[stotra]
@@ -66,6 +73,9 @@ def text_info(stotra, clips):
     dets = Counter(c["detected"] for c in clips if c["detected"] and c["flag"] not in ("COLOPHON", "UVACA"))
     dom, k = dets.most_common(1)[0] if dets else ("", 0)
     rom = SL.title_iast(title, meta.get("wiki_title", ""))
+    above, below = (X["above"], X["below"]) if X else ("", "")
+    # verse-slide header: title · chapter (e.g. साङ्ख्ययोगः · द्वितीयोऽध्यायः)
+    head, head_rom = (f"{title} · {below}", f"{rom} · {SL.cap(SL.iast(below))}") if below else (title, rom)
     # metre line: the declared header; else the detected metres, most frequent first (<= 3)
     if decl in SL.CHANDAS: chandas = SL.CHANDAS[decl]
     else:
@@ -75,8 +85,9 @@ def text_info(stotra, clips):
         chandas = (" · ".join(SL.CHANDAS[m] for m in used)
                    if 0 < len(used) <= 3 and known >= 0.9 * len(verses) else None)   # don't show a partial list
 
-    return dict(src=src, tex=tex, shown=shown, meta=meta, title=title, rom=rom, composer=composer,
-                speaker=speaker, source=source, chandas=chandas)
+    return dict(src=src, tex=tex, shown=shown, split=split, meta=meta, title=title, rom=rom,
+                composer=above or composer, speaker=below or speaker, source=source, chandas=chandas,
+                head=head, head_rom=head_rom)
 
 
 def chapter_list(clips, shown, rom, lead, total):
@@ -116,6 +127,9 @@ def main():
     T = text_info(a.stotra, clips)
     shown, title, rom = T["shown"], T["title"], T["rom"]
     composer, speaker, source, chandas = T["composer"], T["speaker"], T["source"], T["chandas"]
+    head, head_rom = T["head"], T["head_rom"]
+    SL.SOURCE_REPO = {"gita": "gita", "gita-padma": "gita", "kathas": "puja-vidhanam",
+                      "ekadashi": "puja-vidhanam"}.get(a.stotra.split("/")[0], "stotra-sangrahah")
 
     mixdir = next(d for d in (f"{a.mp3root}/{a.stotra}", f"{a.mp3root}/{a.stotra}_FALLBACK") if os.path.isdir(d))
     audio = next(f for f in glob.glob(f"{mixdir}/*_full*{a.audio}.mp3"))
@@ -136,10 +150,15 @@ def main():
         m = re.search(r"v(\d+)$", c["id"]); num = int(m.group(1)) if m else None
         t0 = uv[1] if uv else t
         if c["flag"] == "COLOPHON":
-            jobs.append((f"{work}/{i:03d}_{c['id']}.png", SL.colophon_tex(frame, title, " ".join(shown[c["seq"]]), rom)))
+            jobs.append((f"{work}/{i:03d}_{c['id']}.png", SL.colophon_tex(frame, head, " ".join(shown[c["seq"]]), head_rom)))
+        elif T["split"].get(c["seq"]):
+            jobs.append((f"{work}/{i:03d}_{c['id']}.png",
+                         SL.split_verse_tex(vpal[nv % 2], head, head_rom, shown[c["seq"]], T["split"][c["seq"]], num,
+                                            uvaca=uv[0] if uv else None)))
+            nv += 1
         else:
             jobs.append((f"{work}/{i:03d}_{c['id']}.png",
-                         SL.verse_tex(vpal[nv % 2], title, shown[c["seq"]], num, rom, uvaca=uv[0] if uv else None)))
+                         SL.verse_tex(vpal[nv % 2], head, shown[c["seq"]], num, head_rom, uvaca=uv[0] if uv else None)))
             nv += 1
         starts.append(max(t0 - LEAD_SWITCH, 0.0))
         uv = None; t += dur + PAUSE

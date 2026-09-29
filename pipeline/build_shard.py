@@ -133,7 +133,7 @@ def parse_meta(tex):
     return meta
 
 
-COLOPHON_WORDS = re.compile(r"सम्पूर्ण|समाप्त|अध्याय|सर्ग|(स्तोत्रम्|स्तवः|स्तुतिः|ष्टकम्)\s*$")
+COLOPHON_WORDS = re.compile(r"सम्पूर्ण|समाप्त|अध्याय|ऽध्याय|सर्ग|(स्तोत्रम्|स्तवः|स्तुतिः|ष्टकम्)\s*$")
 
 
 def iti(raw, sec):
@@ -182,6 +182,8 @@ def parse(tex):
             if not DEVA.search(text): continue
             out += flush()
             if re.match(r"इति|इत्य", text): out += iti(g, sec)        # verse line / colophon / label
+            elif text.startswith("ॐ") and COLOPHON_WORDS.search(text):   # "ॐ तत् सदिति … अध्यायः" (Gītā)
+                out.append(("colophon", None, [clean(g, hyphens=True)], [display(g)]))
             else: out.append(("verse", (sec, None), [text], [display(g)]))
             continue
         name, star = m.group(1), m.group(2)
@@ -283,11 +285,16 @@ def render_key(c):
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:16]
 
 
-def build(path, seed, gadya_max, group=None, collection="stotras", cache="out/cache"):
+def build(path, seed, gadya_max, group=None, collection="stotras", cache="out/cache",
+          part=None, after=None, slug=None):
+    """part=(first, last) line numbers (1-based) and/or after=marker select a piece of a file
+    (one chapter of the Gītā, the dhyāna of nyasa.tex); slug names that piece."""
     tex = open(path, encoding="utf-8").read()
+    if part: tex = "".join(tex.splitlines(keepends=True)[part[0] - 1:part[1]])
+    if after: tex = tex[tex.index(after):]
     meta = parse_meta(tex)
     deity = group or os.path.basename(os.path.dirname(path)).lower()
-    slug = re.sub(r"[^a-z0-9]+", "", os.path.splitext(os.path.basename(path))[0].lower())
+    slug = slug or re.sub(r"[^a-z0-9]+", "", os.path.splitext(os.path.basename(path))[0].lower())
     stotra = f"{collection}/{slug}" if group else f"{collection}/{deity}/{slug}"
     declared = DECLARED.get(meta.get("chandas", "").lower(), "")
     clips, seq, unnum = [], 0, 0
@@ -343,6 +350,8 @@ def build(path, seed, gadya_max, group=None, collection="stotras", cache="out/ca
         ov = OVERRIDES.get(" | ".join(c["padas"]))
         if ov: c["meter"], c["seed"] = ov; c["override"] = True
         c["src"] = os.path.abspath(path)
+        if part: c["part"] = list(part)
+        if after: c["after"] = after
         c["key"] = render_key(c)
         c["out"] = f"{cache}/{c['key'][:2]}/{c['key']}.wav"
     return clips

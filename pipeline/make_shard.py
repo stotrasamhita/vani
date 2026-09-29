@@ -16,7 +16,7 @@ import argparse, collections, glob, json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from build_shard import build, n_ak                            # noqa: E402
 
-from corpora import SOURCES, EXCLUDE_DIRS, EXCLUDE_STOTRAS, RENDER_FLAGS, PROSE_MAX   # noqa: E402
+from corpora import SOURCES, PIECES, EXCLUDE_DIRS, EXCLUDE_STOTRAS, RENDER_FLAGS, PROSE_MAX   # noqa: E402
 
 
 def main():
@@ -25,10 +25,13 @@ def main():
     ap.add_argument("--cache", default="out/cache")
     a = ap.parse_args()
     keep, rows = [], []
-    for pattern, coll, group in SOURCES:
-        for path in sorted(glob.glob(pattern, recursive=True)):
-            if any(d in path for d in EXCLUDE_DIRS): continue
-            for c in build(path, 60, 24, group, coll, a.cache):
+    jobs = [(path, coll, group, {}) for pattern, coll, group in SOURCES
+            for path in sorted(glob.glob(pattern, recursive=True)) if not any(d in path for d in EXCLUDE_DIRS)]
+    jobs += [(path, coll, group, dict(slug=slug, **opt)) for path, coll, group, slug, opt in PIECES]
+    for path, coll, group, opt in jobs:
+            split = opt.pop("split", None)
+            for c in build(path, 60, 24, group, coll, a.cache, **opt):
+                if split: c["split_src"] = split
                 text = " ".join(c["padas"])
                 why = ("excluded stotra" if c["stotra"] in EXCLUDE_STOTRAS else "") \
                     if c["flag"] in ("COLOPHON", "UVACA") else \

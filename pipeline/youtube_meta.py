@@ -11,7 +11,7 @@ pipeline/youtube_blurbs.tsv (stotra id <TAB> text).
 import argparse, csv, glob, json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import video                                               # noqa: E402  (also chdir()s to the repo)
-from config import STOTRA_SANGRAHAH, PUJA_VIDHANAM          # noqa: E402
+from config import STOTRA_SANGRAHAH, PUJA_VIDHANAM, GITA    # noqa: E402
 from video import SL                                       # noqa: E402
 
 TITLE_MAX, DESC_MAX, TAGS_MAX = 100, 5000, 500
@@ -24,7 +24,20 @@ Production: https://github.com/stotrasamhita/vani
 BLURBS = {r[0]: r[1] for r in (l.rstrip("\n").split("\t", 1) for l in
           open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "youtube_blurbs.tsv"), encoding="utf-8"))
           if len(r) == 2 and r[0] != "stotra"}   # hand-written introductions, one per text
-PLAYLISTS = {"stotras": "Stotras — {deity}", "kathas": "Vrata kathās", "ekadashi": "Ekādaśī māhātmyam"}
+PLAYLISTS = {"stotras": "Stotras — {deity}", "kathas": "Vrata kathās", "ekadashi": "Ekādaśī māhātmyam",
+             "gita": "Śrīmad Bhagavad Gītā (complete)", "gita-padma": "Gītā-māhātmyam (Padma Purāṇa)"}
+REPOS = {"stotras": ("stotra-sangrahah", STOTRA_SANGRAHAH), "gita": ("gita", GITA), "gita-padma": ("gita", GITA)}
+HASHTAG = {"stotras": "Stotra", "ekadashi": "Ekadashi", "gita": "BhagavadGita", "gita-padma": "BhagavadGita"}
+GITA_TAGS = ["Bhagavad Gita", "Gita", "Krishna", "Arjuna", "Gita chanting", "Sanskrit shlokas"]
+
+
+def gita_title(stotra, en):
+    """Search-friendly English head for the Gītā set: 'Bhagavad Gita Chapter 2 · Sankhya Yoga'."""
+    slug = stotra.rsplit("/", 1)[1]
+    if slug.startswith("chapter"): return f"Bhagavad Gita Chapter {int(slug[7:])} · {en}"
+    if slug.startswith("mahatmyam"): return f"Gita Mahatmyam Chapter {int(slug[9:])} (Padma Purana)"
+    return {"00dhyanam": "Gita Dhyanam", "19mahatmyam": "Gita Mahatmyam (closing verses)",
+            "20varahamahatmyam": "Gita Mahatmyam (Varaha Purana)"}.get(slug, en)
 
 
 def plain(s):
@@ -46,10 +59,11 @@ def meta_for(stotra, shard):
     if os.path.exists(chf):
         chapters = open(chf, encoding="utf-8").read().splitlines()
     else:                                                  # no video yet: same timeline from the mix
-        mix = (glob.glob(f"out/mp3/{stotra}/*_sruthi_m16.json") + glob.glob(f"out/mp3/{stotra}_FALLBACK/*_sruthi_m16.json"))[0]
-        tm = json.load(open(mix))
+        mix = glob.glob(f"out/mp3/{stotra}/*_sruthi_m16.json") + glob.glob(f"out/mp3/{stotra}_FALLBACK/*_sruthi_m16.json")
+        tm = json.load(open(mix[0])) if mix else None            # not rendered yet: chapters come later
         chapters = [f"{video.ts(t)} {n}" for t, n in
-                    video.chapter_list(clips, T["shown"], T["rom"], tm["lead_s"], tm["total_s"])]
+                    video.chapter_list(clips, T["shown"], T["rom"], tm["lead_s"], tm["total_s"])] if tm else \
+                   ["0:00 " + T["rom"], "(chapters: pending audio render)"]
     en = T["meta"].get("wiki_title") or plain(T["rom"])
     if coll == "ekadashi":                                 # search-friendly: "Nirjala Ekadashi Mahatmyam (Jyeshtha Shukla)"
         name = re.sub(r"^\d+", "", slug)
@@ -57,6 +71,7 @@ def meta_for(stotra, shard):
                    "jagaranamahima": "Ekadashi Jagarana Mahima", "dvadashi": "Shravana Dvadashi Vrata"}
         parts = [plain(x).capitalize() for x in T["rom"].split("-")[:2]]
         en = special.get(name) or f"{name.capitalize()} Ekadashi Mahatmyam ({' '.join(parts)})"
+    if coll in ("gita", "gita-padma"): en = gita_title(stotra, en)
     comp_en = T["meta"].get("composer", "") if T["composer"] else ""
     iast = lambda d: SL.cap(SL.iast(d))
 
@@ -69,7 +84,8 @@ def meta_for(stotra, shard):
 
     # layout (user, 2026-09-28): introduction, what the video is, title/composer/metre, chapters, credits
     lines = ([BLURBS[stotra], ""] if stotra in BLURBS else []) + \
-            ["Chanted verse by verse, with the text on screen in Devanāgarī and IAST.", "",
+            ["Chanted verse by verse, with the text on screen in Devanāgarī and IAST"
+             + (", each verse followed by its word split (padaccheda)." if T["split"] else "."), "",
              f"{T['title']} · {T['rom']}"]
     if T["composer"]: lines.append(f"{T['composer']} · {iast(T['composer'])}")
     if T["speaker"]: lines.append(f"{T['speaker']} · {iast(T['speaker'])}")
@@ -77,13 +93,14 @@ def meta_for(stotra, shard):
         lines.append(f"छन्दः — {T['chandas']} · Chandaḥ — " + " · ".join(iast(m) for m in T["chandas"].split(" · ")))
     if T["source"]: lines.append(f"मूलम् — {T['source']} · Mūlam — {iast(T['source'])}")
     lines += [""]
-    repo = "stotra-sangrahah" if coll == "stotras" else "puja-vidhanam"
-    root = STOTRA_SANGRAHAH if coll == "stotras" else PUJA_VIDHANAM
+    repo, root = REPOS.get(coll, ("puja-vidhanam", PUJA_VIDHANAM))
     srcurl = f"https://github.com/stotrasamhita/{repo}/blob/master/" + os.path.relpath(T["src"], root)
+    part = next((c.get("part") for c in shard if c["stotra"] == stotra), None)
+    if part: srcurl += f"#L{part[0]}-L{part[1]}"                  # a piece of the file (Gītā chapter)
     deity = T["meta"].get("deity", "")
     tail = ["", CREDITS.format(srcurl=srcurl), "",
             " ".join(f"#{h}" for h in dict.fromkeys(["Sanskrit", plain(deity).replace(" ", "") if deity else "",
-                                                       {"stotras": "Stotra", "ekadashi": "Ekadashi"}.get(coll, "Katha")]) if h)]
+                                                       HASHTAG.get(coll, "Katha")]) if h)]
     # chapters: thin them if the description would be too long (YouTube needs >= 3, each >= 10 s)
     step = 1
     while True:
@@ -94,8 +111,10 @@ def meta_for(stotra, shard):
 
     tags, n = [], 0
     for t in dict.fromkeys([en, T["title"], plain(T["rom"]), T["rom"], comp_en, plain(deity) if deity else "",
-                            "Sanskrit", {"stotras": "stotra", "ekadashi": "Ekadashi"}.get(coll, "vrata katha"),
-                            "Padma Purana" if coll == "ekadashi" else "", "Sanskrit chanting",
+                            "Sanskrit", {"stotras": "stotra", "ekadashi": "Ekadashi", "gita": "Bhagavad Gita",
+                             "gita-padma": "Gita Mahatmya"}.get(coll, "vrata katha"),
+                            "Padma Purana" if coll in ("ekadashi", "gita-padma") else "", "Sanskrit chanting",
+                            *(GITA_TAGS if coll.startswith("gita") else []),
                             "lyrics", "IAST"] +
                            [plain(iast(m)) for m in (T["chandas"] or "").split(" · ") if m]):
         if t and n + len(t) + 1 <= TAGS_MAX: tags.append(t); n += len(t) + 1
