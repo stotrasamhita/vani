@@ -1,0 +1,7 @@
+# generated
+out/
+work/
+__pycache__/
+*.pyc
+# machine-specific settings
+vani.env

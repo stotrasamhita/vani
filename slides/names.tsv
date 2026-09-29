@@ -1,0 +1,69 @@
+kind	english	devanagari	role	note  (speaker rows hold the stem: slide shows <stem>कृतम्/कृता/कृतः)
+composer	Adi Shankaracharya	आदिशङ्कराचार्यः	author	approved
+composer	Veda Vyasa	वेदव्यासमहर्षिः	author	
+composer	Valmiki	वाल्मीकिमहर्षिः	author	
+composer	Yajnavalkya	याज्ञवल्क्यमहर्षिः	author	
+composer	Patanjali	पतञ्जलिमहर्षिः	author	
+composer	Garga Rishi	गर्गमहर्षिः	author	
+composer	Anantarama Dikshita	अनन्तरामदीक्षितः	author	
+composer	Vallabhacharya	वल्लभाचार्यः	author	
+composer	Budha Kaushika	बुधकौशिकमहर्षिः	author	
+composer	Agastya	अगस्त्यमहर्षिः	author	
+composer	Brihaspati	बृहस्पतिः	author	
+composer	Chandrashekharendra Saraswati	श्रीचन्द्रशेखरेन्द्रसरस्वतीश्रीचरणाः	author	
+composer	Lakshmikanta Sharma	लक्ष्मीकान्तशर्मा	author	
+composer	Kambakkudi Kulathur Aiyyar	कम्बङ्गुडि-कुळत्तूर्-श्रीनिवास-अय्यर्	author	user 2026-09-27
+composer	Appayya Dikshita	अप्पय्यदीक्षितः	author	
+composer	Pushpadanta	पुष्पदन्तः	author	
+composer	Totakaracharya	तोटकाचार्यः	author	
+composer	Nrsimha Bharati	श्रीनृसिंहभारतीस्वामिनः	author	
+composer	Brahma	ब्रह्म	speaker	speaker, not author
+composer	Vibhishana	विभीषण	speaker	
+composer	Bhishma	भीष्म	speaker	
+composer	Dhruva	ध्रुव	speaker	
+composer	Indra	इन्द्र	speaker	
+composer	Dasharatha	दशरथ	speaker	
+composer	Savitri	सावित्री	speaker	
+composer	Muni	मुनि	speaker	user: मुनि is fine
+composer	Shiva	शिव	speaker	
+composer	Narada	नारद	speaker	
+composer	Hanuman	हनुमत्	speaker	
+composer	Krishna	कृष्ण	speaker	
+composer	Priyavrata	प्रियव्रत	speaker	
+composer	Krishna-Arjuna		speaker	left off (user undecided 2026-09-27; options कृष्णार्जुनकृतम् / श्रीकृष्णार्जुनसंवादे)
+composer	Rama	राम	speaker	
+composer	Subrahmanya	सुब्रह्मण्य	speaker	source typo "Composer:Subrahmanya" in ShivashivaaStuti.tex
+source	Skanda Puranam	स्कन्दपुराणम्		
+source	Padma Puranam	पद्मपुराणम्		also for all Ekādaśī chapters
+source	Mahabharatam	महाभारतम्		
+source	Bhavishya Puranam	भविष्यपुराणम्		
+source	Bhagavatam	श्रीमद्भागवतम्		
+source	Brahmanda Puranam	ब्रह्माण्डपुराणम्		
+source	Brahmavaivarta Puranam	ब्रह्मवैवर्तपुराणम्		
+source	Ramayanam	श्रीमद्रामायणम्		
+source	Rudrayamala	रुद्रयामलम्		
+source	Sudarshana Samhita	सुदर्शनसंहिता		
+source	Kamakshi Vilasam	कामाक्षीविलासः		
+source	Shiva Rahasyam	शिवरहस्यम्		
+source	Ganesha Puranam	गणेशपुराणम्		
+source	Matsya Puranam	मत्स्यपुराणम्		
+source	Lalitagama	ललितागमः		
+source	Shakta Pramodam	शाक्तप्रमोदः		
+source	Ananda Ramayanam	आनन्दरामायणम्		
+source	Halasya Mahatmyam	हालास्यमाहात्म्यम्		
+source	Shankara Samhita	शङ्करसंहिता		
+vakta	Agastya	अगस्त्य	speaker	`% vakta:` stems (speaker shown instead of the author)
+vakta	Bhishma	भीष्म	speaker	
+vakta	Brahma	ब्रह्म	speaker	
+vakta	Dhaumya	धौम्य	speaker	
+vakta	Krishna	कृष्ण	speaker	
+vakta	Sanatkumara	सनत्कुमार	speaker	
+vakta	Shiva	शिव	speaker	
+vakta	Upamanyu	उपमन्यु	speaker	
+vakta	Vibhishana	विभीषण	speaker	
+title	kathas/kathas/somavaravratakatha	सोमवारव्रतकथा	Somavara Vrata Katha	per-text title override (source file heading is just "कथा"); source: Skanda Puranam
+title	kathas/kathas/pativratamahatymaparva	पतिव्रतामाहात्म्यपर्व	Pativrata Mahatmya Parva	source: Mahabharatam
+title	kathas/kathas/syamantakopakhyanam	स्यमन्तकोपाख्यानम्	Syamantaka Upakhyanam	source: Skanda Puranam
+title	kathas/varalakshmi-vratam/varalakshmivratakathabhavishyapuranam	वरलक्ष्मीव्रतकथा	Varalakshmi Vrata Katha	source: Bhavishyottara Puranam
+source	Bhavishyottara Puranam	भविष्योत्तरपुराणम्		
+title	stotras/dhyanam/dhyanam	ध्यानम्	Dhyanam	source file has no heading
