@@ -124,6 +124,24 @@ def display(t):
     return re.sub(r"\s+", " ", t).strip()
 
 
+def load_macros(path):
+    """\\newcommand{\\name}{body} definitions of a .tex file -> {name: body}."""
+    src = open(path, encoding="utf-8").read(); out = {}
+    for m in re.finditer(r"\\newcommand\{\\(\w+)\}\s*(?=\{)", src):
+        out[m.group(1)], _ = read_group(src, m.end())
+    return out
+
+
+def expand_macros(tex, macros):
+    """Inline the given zero-argument macros (nested ones too); comments are dropped first."""
+    tex = re.sub(r"(?<!\\)%.*", "", tex)
+    for _ in range(4):
+        new = re.sub(r"\\([A-Za-z]+)(?![A-Za-z])", lambda m: macros.get(m.group(1), m.group(0)), tex)
+        if new == tex: break
+        tex = new
+    return tex
+
+
 def parse_meta(tex):
     m = re.search(r"% --meta--(.*?)% --end-meta--", tex, re.S)
     meta = {}
@@ -146,11 +164,14 @@ def iti(raw, sec):
     return []
 
 
-def parse(tex):
+def parse(tex, headings=False, zones=False):
     """Return [('verse', (sec, num|None), [hemistich,...]) | ('prose', None, [segment,...])];
-    sec counts \\resetShloka restarts that follow numbered verses, so (sec, num) is unique."""
+    sec counts \\resetShloka restarts that follow numbered verses, so (sec, num) is unique.
+    headings: \\chapt/\\sect become ('heading', ...) clips ("अथ <name>"), recited.
+    zones: \\dnsub/\\closesub/headings emit ('zone', None, [label]) markers (label '' = main text);
+    verses inside a labelled zone (dhyāna, maṅgala) are unnumbered."""
     body = re.sub(r"(?<!\\)%.*", "", tex)                  # comments (incl. %12 verse tags)
-    count, sec, i, prose = 0, 0, 0, []
+    count, sec, i, prose, zone = 0, 0, 0, [], ""
     tok = re.compile(r"\\([a-zA-Z]+)(\*?)|(?<!\\)\{")
 
     def flush():
@@ -203,13 +224,22 @@ def parse(tex):
                 out.append(("colophon", None, [clean(" ".join(args[:n - anno]), hyphens=True)],
                             [" ".join(shown)]))
                 continue
-            if not star: count += 1; num = count
+            if not star and not zone: count += 1; num = count
             out.append(("verse", (sec, num), lines, shown))
         elif name == "uvacha":           # "X उवाच": recited before the next verse, shown with it
             out += flush(); a, i = read_group(body, i)
             if DEVA.search(clean(a)): out.append(("uvaca", None, [clean(a)], [display(a)]))
         elif name in HEADING_MACROS:
-            out += flush(); _, i = read_group(body, i)
+            out += flush(); a, i = read_group(body, i)
+            if zones and name == "dnsub":
+                zone = display(a) or "-"; out.append(("zone", None, [zone], None))
+            elif name in ("sect", "chapt") and (headings or zones):
+                if zones: zone = ""; out.append(("zone", None, [""], None))
+                if headings:
+                    segs = [t for t in (clean(x) for x in re.split(r"\\textsf\{[-—–]*\}", a)) if t]
+                    out.append(("heading", None, ["अथ " + segs[0]] + segs[1:], ["अथ " + " । ".join(segs)]))   # one pada per segment: pause between them
+        elif name == "closesub" and zones:
+            out += flush(); zone = ""; out.append(("zone", None, [""], None))
         elif name == "resetShloka":
             if count: sec += 1
             count = 0
@@ -286,19 +316,31 @@ def render_key(c):
 
 
 def build(path, seed, gadya_max, group=None, collection="stotras", cache="out/cache",
-          part=None, after=None, slug=None):
+          part=None, after=None, slug=None, headings=False, zones=False, expand=None, swap=None):
     """part=(first, last) line numbers (1-based) and/or after=marker select a piece of a file
-    (one chapter of the Gītā, the dhyāna of nyasa.tex); slug names that piece."""
+    (one chapter of the Gītā, the dhyāna of nyasa.tex); slug names that piece.
+    swap=(marker, replacement) replaces everything from marker on; expand=<.tex> inlines that file's
+    \\newcommand macros (the Purāṇa dhyāna/maṅgala verses); headings/zones: see parse()."""
     tex = open(path, encoding="utf-8").read()
     if part: tex = "".join(tex.splitlines(keepends=True)[part[0] - 1:part[1]])
     if after: tex = tex[tex.index(after):]
+    if swap: tex = tex[:tex.index(swap[0])] + swap[1]
     meta = parse_meta(tex)
+    if expand: tex = expand_macros(tex, load_macros(expand))
     deity = group or os.path.basename(os.path.dirname(path)).lower()
     slug = slug or re.sub(r"[^a-z0-9]+", "", os.path.splitext(os.path.basename(path))[0].lower())
     stotra = f"{collection}/{slug}" if group else f"{collection}/{deity}/{slug}"
     declared = DECLARED.get(meta.get("chandas", "").lower(), "")
-    clips, seq, unnum = [], 0, 0
-    for kind, num, parts, *shown in parse(tex):
+    clips, seq, unnum, zone = [], 0, 0, ""
+    for kind, num, parts, *shown in parse(tex, headings, zones):
+        if zones and clips and "zone" not in clips[-1]: clips[-1]["zone"] = zone
+        if kind == "zone": zone = parts[0]; continue
+        if kind == "heading":
+            seq += 1; nh = sum(1 for c in clips if c["flag"] == "HEADING") + 1
+            clips.append(dict(id=f"{deity}_{slug}_h{nh:02d}", meter="anushtubh", padas=parts, seed=seed,
+                              no_sandhi=True, display=shown[0], stotra=stotra, seq=seq, detected="",
+                              declared=declared, flag="HEADING"))
+            continue
         if kind == "uvaca":
             seq += 1; nw = sum(1 for c in clips if c["flag"] == "UVACA") + 1
             cid = f"{deity}_{slug}_w{nw:02d}"
@@ -340,6 +382,7 @@ def build(path, seed, gadya_max, group=None, collection="stotras", cache="out/ca
         clips.append(dict(id=cid, meter=meter, padas=parts, seed=seed, no_sandhi=True, display=shown[0],
                           stotra=stotra, seq=seq,
                           detected=det, declared=declared, flag=",".join(flags)))
+    if zones and clips and "zone" not in clips[-1]: clips[-1]["zone"] = zone
     dets = [c["detected"] for c in clips if c["detected"]]
     dominant = max(set(dets), key=dets.count) if dets else declared
     for c in clips:
@@ -352,6 +395,8 @@ def build(path, seed, gadya_max, group=None, collection="stotras", cache="out/ca
         c["src"] = os.path.abspath(path)
         if part: c["part"] = list(part)
         if after: c["after"] = after
+        opts = {k: v for k, v in dict(headings=headings, zones=zones, expand=expand, swap=swap).items() if v}
+        if opts: c["opts"] = opts
         c["key"] = render_key(c)
         c["out"] = f"{cache}/{c['key'][:2]}/{c['key']}.wav"
     return clips

@@ -248,8 +248,9 @@ def split_verse_tex(pal, head, head_rom, display, split, num, uvaca=None):
             + END)
 
 
-def colophon_tex(pal, title, text, title_rom=None):
-    """Closing colophon (इति …): wrapped, centred, smaller and in gold; ends with ॥."""
+def colophon_tex(pal, title, text, title_rom=None, end=True):
+    """Closing colophon (इति …): wrapped, centred, smaller and in gold; ends with ॥ (end=False: the opening
+    "अथ …" heading, no daṇḍa)."""
     n = len(text)
     size, lead, isize, ilead = ((34, 50, 19, 25) if n < 160 else (28, 42, 16, 21) if n < 340 else (23, 34, 13, 17))
     s = _preamble(pal)
@@ -261,8 +262,8 @@ def colophon_tex(pal, title, text, title_rom=None):
           rf"  \fill[acc] ([yshift=-1.55in]current page.north) circle (2.2pt);" "\n")
     s += (rf"  \node[anchor=center,yshift=-0.35in,text=acc,align=center] at (current page.center)"
           rf" {{\adjustbox{{max totalheight=6.0in}}{{\parbox{{12.5in}}{{\centering"
-          rf"{{\deva\fontsize{{{size}}}{{{lead}}}\selectfont {text} ॥\par}}\vspace{{0.8em}}"
-          rf"{{\color{{txt!82!bge}}\iast\itshape\fontsize{{{isize}}}{{{ilead}}}\selectfont {cap(iast(text))} ||\par}}}}}}}};" "\n")
+          rf"{{\deva\fontsize{{{size}}}{{{lead}}}\selectfont {text}{' ॥' if end else ''}\par}}\vspace{{0.8em}}"
+          rf"{{\color{{txt!82!bge}}\iast\itshape\fontsize{{{isize}}}{{{ilead}}}\selectfont {cap(iast(text))}{' ||' if end else ''}\par}}}}}}}};" "\n")
     return s + END
 
 

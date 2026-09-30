@@ -34,7 +34,7 @@ def main():
                 if split: c["split_src"] = split
                 text = " ".join(c["padas"])
                 why = ("excluded stotra" if c["stotra"] in EXCLUDE_STOTRAS else "") \
-                    if c["flag"] in ("COLOPHON", "UVACA") else \
+                    if c["flag"] in ("COLOPHON", "UVACA", "HEADING") else \
                       ("label" if c["meter"] == "gadya" and (re.match(r"इति|इत्य", text) or n_ak(text) < 12) else
                        "prose" if c["meter"] == "gadya" else
                        "excluded stotra" if c["stotra"] in EXCLUDE_STOTRAS else

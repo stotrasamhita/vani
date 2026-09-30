@@ -92,6 +92,9 @@ def meta_for(stotra, shard):
     if T["chandas"]:
         lines.append(f"छन्दः — {T['chandas']} · Chandaḥ — " + " · ".join(iast(m) for m in T["chandas"].split(" · ")))
     if T["source"]: lines.append(f"मूलम् — {T['source']} · Mūlam — {iast(T['source'])}")
+    if any(c.get("zone") for c in clips):
+        lines += ["", "Begins with the traditional dhyāna verses and ends with the maṅgala verses; "
+                      "use the chapter marker \"Māhātmyam begins\" to skip straight to the māhātmyam."]
     lines += [""]
     repo, root = REPOS.get(coll, ("puja-vidhanam", PUJA_VIDHANAM))
     srcurl = f"https://github.com/stotrasamhita/{repo}/blob/master/" + os.path.relpath(T["src"], root)
@@ -104,7 +107,9 @@ def meta_for(stotra, shard):
     # chapters: thin them if the description would be too long (YouTube needs >= 3, each >= 10 s)
     step = 1
     while True:
-        ch = [chapters[0]] + chapters[1:][step - 1::step]
+        rest = chapters[1:]                                     # thin only the plain verse chapters
+        thin = [x for x in rest if re.match(r"\d+:\d+ Verse ", x)][step - 1::step]
+        ch = [chapters[0]] + [x for x in rest if not re.match(r"\d+:\d+ Verse ", x) or x in thin]
         desc = "\n".join(lines + ["Chapters:"] + ch + tail)
         if len(desc) <= DESC_MAX or step > 50: break
         step += 1

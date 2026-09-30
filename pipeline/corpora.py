@@ -31,23 +31,34 @@ RENDER_FLAGS = {"", "HYPERMETRIC"}   # verse flags rendered as-is; others go thr
 PROSE_MAX = 0.10
 
 
-def _parts(path, macro):
-    """(first, last) line ranges of each \\<macro>{…} section of a file."""
+def _parts(path, macro, lead=()):
+    """(first, last) line ranges of each \\<macro>{…} section of a file. `lead` lists macro lines
+    (and blanks) directly above a section that belong to it (the Padma chapters' dhyāna macros)."""
     lines = open(path, encoding="utf-8").read().splitlines()
     idx = [i + 1 for i, l in enumerate(lines) if l.startswith("\\" + macro + "{")]
-    return list(zip(idx, [i - 1 for i in idx[1:]] + [len(lines)]))
+    starts = []
+    for i in idx:
+        while i > 1 and (lines[i - 2].strip() in lead or not lines[i - 2].strip()): i -= 1
+        starts.append(i)
+    return list(zip(starts, [i - 1 for i in starts[1:]] + [len(lines)]))
 
 
 # Texts that are pieces of a file: (path, collection, group, slug, options). The Gītā set (2026-09-29):
 # dhyānam, 18 chapters (with word-split slides from words/gita-words.tex, line-aligned with gita.tex),
 # closing māhātmyam, Varāha-purāṇa māhātmyam, Gītārtha-saṅgraha; then the Padma-purāṇa māhātmyam, one
 # text per chapter (6.175-6.192). Presentation (titles, lines above/below) is in slides/texts.tsv.
+PURANA_MACROS = f"{PUJA_VIDHANAM}/purana-dhyana-shloka.tex"      # \\ganapatyadiDhyanam, \\padmaPuranam, \\genMangalaShloka
 PIECES = [(f"{GITA}/nyasa.tex", "gita", "gita", "00dhyanam", dict(after="\\dnsub{ध्यानम्}"))]
 PIECES += [(f"{GITA}/gita.tex", "gita", "gita", f"chapter{k:02d}",
-            dict(part=p, split=f"{GITA}/words/gita-words.tex"))
+            dict(part=p, split=f"{GITA}/words/gita-words.tex", headings=True))    # "अथ प्रथमोऽध्यायः …" is recited
            for k, p in enumerate(_parts(f"{GITA}/gita.tex", "chapt"), 1)]
 PIECES += [(f"{GITA}/mahatmyam.tex", "gita", "gita", "19mahatmyam", {}),
-           (f"{GITA}/mahatmyam-varaha-puranam.tex", "gita", "gita", "20varahamahatmyam", {}),
+           # Varāha māhātmyam: own dhyāna at the start; the full Purāṇa maṅgala (with the kṣamā verses) at the end
+           (f"{GITA}/mahatmyam-varaha-puranam.tex", "gita", "gita", "20varahamahatmyam",
+            dict(zones=True, expand=PURANA_MACROS, swap=("\\dnsub{मङ्गलश्लोकाः}", "\\genMangalaShloka"))),
            (f"{GITA}/gsa.tex", "gita", "gita", "21gitarthasangraha", {})]
-PIECES += [(f"{GITA}/mahatmyam-padma-puranam.tex", "gita-padma", "gitapadma", f"mahatmyam{k:02d}", dict(part=p))
-           for k, p in enumerate(_parts(f"{GITA}/mahatmyam-padma-puranam.tex", "sect"), 1)]
+# Padma chapters: dhyāna verses + "अथ <Purāṇa's chapter number>" + māhātmyam + colophon + maṅgala, each video standalone
+PIECES += [(f"{GITA}/mahatmyam-padma-puranam.tex", "gita-padma", "gitapadma", f"mahatmyam{k:02d}",
+            dict(part=p, headings=True, zones=True, expand=PURANA_MACROS))
+           for k, p in enumerate(_parts(f"{GITA}/mahatmyam-padma-puranam.tex", "sect",
+                                        ("\\ganapatyadiDhyanam", "\\padmaPuranam")), 1)]

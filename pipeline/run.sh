@@ -52,6 +52,8 @@ if [ $RENDER = 1 ]; then
     --results $W/bulk_results.json 2>&1 | tee $W/render_$TS.log
   [ -n "$SECOND" ] && wait $SECOND
   echo "RENDER_EXIT fails=$(cat $W/render_*$TS.log | grep -c '^FAIL')"
+  MISSING=$(python3 -c "import json,os; print(sum(not os.path.exists(c['out']) for c in json.load(open('$W/bulk.json'))))")
+  [ "$MISSING" != 0 ] && { echo "== render incomplete: $MISSING clips missing; not publishing (re-run to resume)"; exit 1; }
 fi
 
 echo "== publish mp3s"
