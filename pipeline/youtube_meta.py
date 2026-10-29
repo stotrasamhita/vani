@@ -24,8 +24,9 @@ Production: https://github.com/stotrasamhita/vani
 BLURBS = {r[0]: r[1] for r in (l.rstrip("\n").split("\t", 1) for l in
           open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "youtube_blurbs.tsv"), encoding="utf-8"))
           if len(r) == 2 and r[0] != "stotra"}   # hand-written introductions, one per text
-PLAYLISTS = {"stotras": "Stotras — {deity}", "kathas": "Vrata kathās", "ekadashi": "Ekādaśī māhātmyam",
+PLAYLISTS = {"stotras": "{deity} Stotram", "kathas": "Vrata Katha", "ekadashi": "Ekādaśī māhātmyam",
              "gita": "Śrīmad Bhagavad Gītā (complete)", "gita-padma": "Gītā-māhātmyam (Padma Purāṇa)"}
+RIVERS = {"Narmada", "Ganga", "Yamuna", "Kaveri", "Godavari"}   # one "Nadi Stotram" playlist
 REPOS = {"stotras": ("stotra-sangrahah", STOTRA_SANGRAHAH), "gita": ("gita", GITA), "gita-padma": ("gita", GITA)}
 HASHTAG = {"stotras": "Stotra", "ekadashi": "Ekadashi", "gita": "BhagavadGita", "gita-padma": "BhagavadGita"}
 GITA_TAGS = ["Bhagavad Gita", "Gita", "Krishna", "Arjuna", "Gita chanting", "Sanskrit shlokas"]
@@ -50,7 +51,7 @@ def plain(s):
 
 
 def meta_for(stotra, shard):
-    clips = sorted((c for c in shard if c["stotra"] == stotra), key=lambda c: c["seq"])
+    clips = sorted((c for c in shard if c["stotra"] == stotra), key=lambda c: c.get("order", c["seq"]))
     T = video.text_info(stotra, clips)
     slug = stotra.rsplit("/", 1)[1]
     coll = stotra.split("/")[0]
@@ -62,7 +63,7 @@ def meta_for(stotra, shard):
         mix = glob.glob(f"out/mp3/{stotra}/*_sruthi_m16.json") + glob.glob(f"out/mp3/{stotra}_FALLBACK/*_sruthi_m16.json")
         tm = json.load(open(mix[0])) if mix else None            # not rendered yet: chapters come later
         chapters = [f"{video.ts(t)} {n}" for t, n in
-                    video.chapter_list(clips, T["shown"], T["rom"], tm["lead_s"], tm["total_s"])] if tm else \
+                    video.chapter_list(clips, T["shown"], T["rom"], tm["lead_s"], tm["total_s"], T["refs"])] if tm else \
                    ["0:00 " + T["rom"], "(chapters: pending audio render)"]
     en = T["meta"].get("wiki_title") or plain(T["rom"])
     if coll == "ekadashi":                                 # search-friendly: "Nirjala Ekadashi Mahatmyam (Jyeshtha Shukla)"
@@ -81,6 +82,8 @@ def meta_for(stotra, shard):
         head = " · ".join(p for p in parts[:2] if p)
         title = head + (f" – {parts[2]}" if len(parts) > 3 and parts[2] else "") + (f" | {parts[-1]}" if len(parts) > 2 else "")
         if len(title) <= TITLE_MAX: break
+    else:
+        title = en if len(en) <= TITLE_MAX else en[:TITLE_MAX - 1].rsplit(" ", 1)[0] + "…"    # the Devanāgarī title is in the description
 
     # layout (user, 2026-09-28): introduction, what the video is, title/composer/metre, chapters, credits
     lines = ([BLURBS[stotra], ""] if stotra in BLURBS else []) + \
@@ -123,7 +126,17 @@ def meta_for(stotra, shard):
                             "lyrics", "IAST"] +
                            [plain(iast(m)) for m in (T["chandas"] or "").split(" · ") if m]):
         if t and n + len(t) + 1 <= TAGS_MAX: tags.append(t); n += len(t) + 1
-    playlist = PLAYLISTS.get(coll, coll).format(deity=plain(deity) or "other")
+    names = [d.strip() for d in plain(deity).split(",") if d.strip()] if deity else []
+    names = ["Nadi" if d in RIVERS else d for d in names]
+    if "/nadi/" in stotra: names = ["Nadi"]
+    if "/adhyatma-ramayana-stotras/" in stotra and (not names or names == ["Others"]): names = ["Rama"]
+    if "karttikeya" in stotra.lower(): names = ["Subrahmanya"]   # Kārttikeya = Subrahmaṇya
+    if not names or names == ["Others"]: names = ["Other"]
+    names = list(dict.fromkeys(names))
+    pls = [PLAYLISTS.get(coll, coll).format(deity=d).replace("Other Stotram", "Other Stotras") for d in names]   # one playlist per deity
+    if "/shatanama/" in stotra: pls.append("Ashtottara Shatanama Stotram")
+    if "/adhyatma-ramayana-stotras/" in stotra: pls.append("Adhyatma Ramayana Stotram")
+    playlist = " | ".join(pls)
     return dict(stotra=stotra, file=os.path.abspath(mp4), title=title, description=desc, tags=", ".join(tags),
                 playlist=playlist, category="Music", language="Sanskrit",
                 notes="Altered or synthetic content: Yes (AI-generated voice). Made for kids: No."
