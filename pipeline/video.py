@@ -49,7 +49,9 @@ def text_info(stotra, clips):
     src = clips[0].get("src") or source_tex(stotra)
     tex = open(src, encoding="utf-8").read()
     piece = dict(part=clips[0].get("part"), after=clips[0].get("after"), **clips[0].get("opts", {}))   # a piece of the file (Gītā chapter)
-    shown = {c["seq"]: c.get("display") for c in build(src, 60, 24, **piece)}   # by position: ids depend on the corpus group; prose has none
+    built = build(src, 60, 24, **piece)
+    refs = {c["seq"]: c["ref"] for c in built if c.get("ref")}
+    shown = {c["seq"]: c.get("display") for c in built}   # by position: ids depend on the corpus group; prose has none
     split = ({c["seq"]: c.get("display") for c in build(clips[0]["split_src"], 60, 24, **piece)}
              if clips[0].get("split_src") else {})             # word-split text, line-aligned with src (checked: same seqs)
     meta = parse_meta(tex)
@@ -62,6 +64,7 @@ def text_info(stotra, clips):
     if stotra in SL.TITLES:                            # per-text override (e.g. heading is just "कथा")
         title, meta["wiki_title"] = SL.TITLES[stotra]
     if stotra in SL.TEXT_SOURCES: meta["source"] = SL.TEXT_SOURCES[stotra]
+    if "/adhyatma-ramayana-stotras/" in stotra: meta.setdefault("source", "Adhyatma Ramayanam")
     if stotra.startswith("ekadashi/"): meta.setdefault("source", "Padma Puranam")   # all chapters are Padma Purāṇa
     if not title: raise SystemExit(f"{stotra}: no heading in {src}; add a 'title' row to slides/names.tsv")
     # the speaker (vakta) is credited when known -- the author (e.g. Vyāsa) was only reporting
@@ -87,7 +90,7 @@ def text_info(stotra, clips):
                    if 0 < len(used) <= 3 and known >= 0.9 * len(verses) else None)   # don't show a partial list
 
     if X: chandas = None                                      # Gītā set: no metre line (user, 2026-09-29)
-    return dict(src=src, tex=tex, shown=shown, split=split, meta=meta, title=title, rom=rom,
+    return dict(src=src, tex=tex, shown=shown, refs=refs, split=split, meta=meta, title=title, rom=rom,
                 composer=above or composer, speaker=below or speaker, source=source, chandas=chandas,
                 head=head, head_rom=head_rom)
 
@@ -103,7 +106,7 @@ def fold_short(chapters, total):
     return [(t_, name) for t_, name, _ in merged]
 
 
-def chapter_list(clips, shown, rom, lead, total):
+def chapter_list(clips, shown, rom, lead, total, refs=None):
     """YouTube chapters: title at 0:00, then each verse (an uvāca starts its verse's chapter) and the
     colophon. Texts with dhyāna/maṅgala zones get one chapter per zone run, and the chapter heading
     ("Atha …") or first main verse is named "Māhātmyam begins". Chapters shorter than 10 s are
@@ -125,10 +128,13 @@ def chapter_list(clips, shown, rom, lead, total):
             pass                                          # zone runs are one chapter; Gītā chapter headings stay in the title chapter
         elif c["flag"] == "COLOPHON":
             chapters.append((t0, "Iti (colophon)"))
+        elif c["flag"] == "PROSE":
+            chapters.append((t0, "Acrostic note"))
         elif c["flag"] != "HEADING" and num:
-            chapters.append((t0, f"Verse {num}"))
+            r = (refs or {}).get(c["seq"])
+            chapters.append((t0, f"Gītā {r[0]}.{r[1]}" if r and (SL.LOCATED.get(c["stotra"]) or (0, 0))[1] is None else f"Verse {num}"))
         elif c["flag"] != "HEADING" and not (zoned and chapters[-1][0] == t0):
-            chapters.append((t0, SL.cap(SL.iast(uv[0])) if uv else "Verse"))
+            chapters.append((t0, SL.cap(SL.iast(uv[0])) if uv else "Additional verse" if re.search(r"_u\d+$", c["id"]) else "Verse"))
         zone = z; uv = None; t += dur + PAUSE
     return fold_short(chapters, total)
 
@@ -150,12 +156,21 @@ def slide_jobs(clips, T, work, t, base=0, nosplit=False):
             jobs.append((png, SL.colophon_tex(frame, head, " ".join(shown[c["seq"]]), head_rom, end=False)))
         elif c["flag"] == "COLOPHON":
             jobs.append((png, SL.colophon_tex(frame, head, " ".join(shown[c["seq"]]), head_rom)))
+        elif c["flag"] == "PROSE":
+            jobs.append((png, SL.colophon_tex(frame, head, " ".join(shown[c["seq"]]), head_rom, end=False)))
         elif T["split"].get(c["seq"]) and not nosplit:
             jobs.append((png, SL.split_verse_tex(vpal[nv % 2], head, head_rom, shown[c["seq"]], T["split"][c["seq"]], num,
                                                  uvaca=uv[0] if uv else None)))
             nv += 1
+        elif (gp := SL.guru_panel(c["stotra"], num or (re.search(r"_(u\d+)$", c["id"]) or [None, None])[1])):     # Kāñcī guruparamparā: the ācārya's portrait and name beside the verse
+            jobs.append((png, SL.guru_verse_tex(vpal[nv % 2], head, head_rom, shown[c["seq"]], num, gp)))
+            nv += 1
         else:
-            jobs.append((png, SL.verse_tex(vpal[nv % 2], head, shown[c["seq"]], num, head_rom, uvaca=uv[0] if uv else None)))
+            loc = SL.locator(c["stotra"], T["refs"].get(c["seq"]))
+            lines = SL.INFO.get(c["stotra"], {}).get("line", [])      # plain-language meaning under the verse
+            jobs.append((png, SL.verse_tex(vpal[nv % 2], head, shown[c["seq"]], loc[2] if loc else num, head_rom,
+                                           uvaca=uv[0] if uv else None, loc=loc,
+                                           meaning=lines[nv] if nv < len(lines) else None)))
             nv += 1
         starts.append(max(t0 - LEAD_SWITCH, 0.0))
         uv = None; t += dur + PAUSE
@@ -202,7 +217,7 @@ def main():
     slug = a.stotra.rsplit("/", 1)[1]
 
     clips = sorted((c for c in json.load(open(a.shard, encoding="utf-8")) if c["stotra"] == a.stotra),
-                   key=lambda c: c["seq"])
+                   key=lambda c: c.get("order", c["seq"]))
     T = text_info(a.stotra, clips)
     shown, title, rom = T["shown"], T["title"], T["rom"]
     composer, speaker, source, chandas = T["composer"], T["speaker"], T["source"], T["chandas"]
@@ -220,15 +235,20 @@ def main():
     out = f"{a.outroot}/{a.stotra}"; work = f"{out}/slides"
     os.makedirs(work, exist_ok=True)
     frame = SL.FRAME_PALETTE
-    jobs = [(f"{work}/000_title.png", SL.title_tex(frame, title, composer, chandas, rom, speaker=speaker, source=source))]
+    info = SL.INFO.get(a.stotra, {})
+    jobs = [(f"{work}/000_title.png", SL.title_tex(frame, title, composer, chandas, rom, speaker=speaker, source=source,
+                                                   note=info.get("when")))]
     starts = [0.0]
-    sj, ss, _ = slide_jobs(clips, T, work, lead)
+    sj, ss, t_end = slide_jobs(clips, T, work, lead)
     jobs += sj; starts += ss
+    if info.get("story"):             # closing note (slides/info.tsv): a slide over the drone's tail, after the last verse
+        jobs.append((f"{work}/999_note.png", SL.note_tex(SL.FRAME_PALETTE, head, head_rom, info["story"])))
+        starts.append(t_end - PAUSE + LEAD_SWITCH)
     with ThreadPoolExecutor(a.jobs) as ex:
         list(ex.map(lambda j: SL.render(j[1], j[0], work), jobs))
 
     mp4 = encode(jobs, starts, total, audio, out, slug, a.jobs)
-    chapters = chapter_list(clips, shown, rom, lead, total)
+    chapters = chapter_list(clips, shown, rom, lead, total, T["refs"])
     with open(f"{out}/{slug}_chapters.txt", "w", encoding="utf-8") as f:
         f.writelines(f"{ts(t)} {name}\n" for t, name in chapters)
     print(f"{mp4}  ({total/60:.1f} min, {len(jobs)} slides)")

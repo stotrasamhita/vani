@@ -35,6 +35,19 @@ from tts_meter import detect_meter, _match_meter           # noqa: E402
 # Bump to force a full re-render (new weights, changed render.py defaults, prep_text fixes, ...).
 RENDER_VERSION = "v1"
 
+# Word-final consonant + space + vowel-initial word ("वसिष्ठम् अप्रमेयम्", "महद् अञ्चित") is rendered as one run
+# ("वसिष्ठमप्रमेयम्"): the pedagogical word-break is a reading aid, and the model chants the liaison more cleanly
+# without it. Only `padas` (the text sent to the renderer) is joined; `display` keeps the breaks. The cache key
+# hashes the unjoined text, so already-rendered clips keep their audio and are joined only when re-rendered.
+JOIN_FINALS = True
+_MATRA = dict(zip("आइईउऊऋॠऌएऐओऔ", ["ा", "ि", "ी", "ु", "ू", "ृ", "ॄ", "ॢ", "े", "ै", "ो", "ौ"]))
+_FINAL_JOIN = re.compile("([क-ह])\u094d[ \u00a0]+([अ-औऋॠऌ])")
+
+
+def join_finals(text):
+    return _FINAL_JOIN.sub(lambda m: m.group(1) + _MATRA.get(m.group(2), ""), text)
+
+
 # render.py resolves meters by bank key or wav stem; we emit wav stems (ASCII).
 BANK_STEMS = {v["wav"][:-4] for k, v in json.load(open(BANK, encoding="utf-8")).items()
               if not k.startswith("_") and isinstance(v, dict) and "wav" in v}
@@ -76,10 +89,17 @@ VERSE_MACROS = {  # name -> (n_args, n_trailing_annotation_args)
     "onelineshloka": (1, 0), "twolineshloka": (2, 0), "threelineshloka": (3, 0),
     "fourlineindentedshloka": (4, 0), "fourlineshloka": (4, 0), "THREElineshloka": (3, 0),
     "annotwolineshloka": (3, 1), "annofourlineindentedshloka": (5, 1),
+    "sixlineindentedshloka": (6, 0), "onelineindentedshloka": (2, 0),
 }
 HEADING_MACROS = {"sect", "chapt", "dnsub"}                # one arg, never recited
 DEVA = re.compile(r"[\u0900-\u097F]")
 SVARA = re.compile(r"[\u0951-\u0954\u1CD0-\u1CFF\uA8E0-\uA8FF\u200C\u200D]")
+
+
+def source_ref(a):
+    """Trailing annotation '{१-३०-२३}' (kāṇḍa-sarga-śloka, parva-adhyāya-śloka, śataka-verse) -> (1, 30, 23)."""
+    d = re.findall(r"[०-९0-9]+", a)
+    return tuple(int(x.translate(str.maketrans("०१२३४५६७८९", "0123456789"))) for x in d) or None
 
 
 def read_group(s, i):
@@ -107,7 +127,8 @@ def clean(t, hyphens=False):
     t = re.sub(r"\\.", " ", t)                             # \\  \,  \-  etc.
     t = SVARA.sub("", t)
     t = t.replace("=", "")
-    if not hyphens: t = t.replace("-", "")                 # compound-split hints
+    if hyphens: t = re.sub(r"-{2,}", " ", t)               # --- is a break between words
+    else: t = t.replace("-", "")                           # compound-split hints
     t = re.sub(r"[{}~'’|।॥0-9०-९\[\]()*]", " ", t)
     return re.sub(r"\s+", " ", t).strip()
 
@@ -178,14 +199,14 @@ def parse(tex, headings=False, zones=False):
         text = "".join(prose); prose.clear()
         # a prose run may end in colophons (॥इति ...॥); other segments are '-delimited
         head, *tails = re.split(r"(?=॥\s*इति)", text)
-        res, segs = [], []
+        res, segs, shown = [], [], []
         for x in re.split(r"'|\n\s*\n", head):
             if not DEVA.search(x): continue
             if re.match(r"\s*[।॥]?\s*(इति|इत्य)", clean(x)): res += iti(x, sec)
-            else: segs.append(clean(x, hyphens=True))
+            else: segs.append(clean(x, hyphens=True)); shown.append(re.sub(r"\s*-{2,}\s*", " — ", display(x)))
         for t in tails:
             t = re.sub(r"^॥\s*", "", t); res += iti(t.split("॥")[0], sec)
-        return ([("prose", None, segs, None)] if segs else []) + res
+        return ([("prose", None, segs, shown)] if segs else []) + res
 
     out = []
     while i < len(body):
@@ -216,8 +237,8 @@ def parse(tex, headings=False, zones=False):
             for _ in range(n): a, i = read_group(body, i); args.append(a)
             lines = [clean(a) for a in args[:n - anno]]
             shown = [display(a) for a in args[:n - anno]]
-            if len(lines) == 4:      # four pādas -> two hemistichs
-                lines = [lines[0] + " " + lines[1], lines[2] + " " + lines[3]]
+            if len(lines) in (4, 6):      # four/six pādas -> two/three hemistichs
+                lines = [lines[k] + " " + lines[k + 1] for k in range(0, len(lines), 2)]
             num = None
             joined = " ".join(lines)
             if re.match(r"इति|इत्य", joined) and COLOPHON_WORDS.search(joined):   # colophon set as a verse
@@ -225,7 +246,8 @@ def parse(tex, headings=False, zones=False):
                             [" ".join(shown)]))
                 continue
             if not star and not zone: count += 1; num = count
-            out.append(("verse", (sec, num), lines, shown))
+            ref = source_ref(" ".join(args[n - anno:])) if anno else None
+            out.append(("verse", (sec, num), lines, shown, ref))
         elif name == "uvacha":           # "X उवाच": recited before the next verse, shown with it
             out += flush(); a, i = read_group(body, i)
             if DEVA.search(clean(a)): out.append(("uvaca", None, [clean(a)], [display(a)]))
@@ -245,6 +267,17 @@ def parse(tex, headings=False, zones=False):
             count = 0
         elif name == "addtocounter":
             _, i = read_group(body, i); k, i = read_group(body, i); count += int(k)
+        elif name == "chapter" and headings:             # Mahābhārata adhyāya: "अथ प्रथमोऽध्यायः" (the ॥N॥ is dropped)
+            out += flush(); a, i = read_group(body, i)
+            seg = clean(a.split("॥")[0])
+            out.append(("heading", None, ["अथ " + seg], ["अथ " + seg]))
+        elif name in ("iti", "itibala", "itikanda"):    # Adhyātma Rāmāyaṇa sarga / kāṇḍa colophons
+            out += flush()
+            a, i = read_group(body, i)
+            if name != "itikanda":
+                b, i = read_group(body, i)
+                a = f"इति श्रीमदध्यात्मरामायणे उमामहेश्वरसंवादे {clean(a)} {clean(b)} सर्गः"
+            out.append(("colophon", None, [clean(a, hyphens=True)], [display(a)]))
         elif name in ("begin", "end", "setlength", "label", "hyperref", "fontspec", "newcommand",
                       "renewcommand", "centerline", "textbf", "vspace", "hspace", "columnsep"):
             # structural: swallow first arg except for content-bearing wrappers
@@ -357,11 +390,11 @@ def build(path, seed, gadya_max, group=None, collection="stotras", cache="out/ca
                               detected="", declared=declared, flag="COLOPHON"))
             continue
         if kind == "prose":
-            for seg in parts:
+            for seg, disp in zip(parts, shown[0]):
                 seq += 1
                 cid = f"{deity}_{slug}_g{seq:03d}"
                 clips.append(dict(id=cid, meter="gadya", padas=chunk(seg, gadya_max), seed=seed,
-                                  no_sandhi=True, stotra=stotra, seq=seq,
+                                  no_sandhi=True, display=[disp], stotra=stotra, seq=seq,
                                   detected="", declared=declared, flag="PROSE"))
             continue
         seq += 1
@@ -382,6 +415,7 @@ def build(path, seed, gadya_max, group=None, collection="stotras", cache="out/ca
         clips.append(dict(id=cid, meter=meter, padas=parts, seed=seed, no_sandhi=True, display=shown[0],
                           stotra=stotra, seq=seq,
                           detected=det, declared=declared, flag=",".join(flags)))
+        if len(shown) > 1 and shown[1]: clips[-1]["ref"] = list(shown[1])
     if zones and clips and "zone" not in clips[-1]: clips[-1]["zone"] = zone
     dets = [c["detected"] for c in clips if c["detected"]]
     dominant = max(set(dets), key=dets.count) if dets else declared
@@ -390,14 +424,16 @@ def build(path, seed, gadya_max, group=None, collection="stotras", cache="out/ca
                 and all(15 <= n_ak(h) <= 19 for h in c["padas"]):
             c["meter"], c["flag"] = "anushtubh", "HYPERMETRIC"
     for c in clips:
-        ov = OVERRIDES.get(" | ".join(c["padas"]))
+        joined = [join_finals(h) for h in c["padas"]] if JOIN_FINALS and c["no_sandhi"] else c["padas"]
+        ov = OVERRIDES.get(" | ".join(c["padas"])) or OVERRIDES.get(" | ".join(joined))   # rows may quote either form
         if ov: c["meter"], c["seed"] = ov; c["override"] = True
+        c["key"] = render_key(c)             # hashed from the text as written, so turning the join on or off never invalidates a rendered clip
+        c["padas"] = joined
         c["src"] = os.path.abspath(path)
         if part: c["part"] = list(part)
         if after: c["after"] = after
         opts = {k: v for k, v in dict(headings=headings, zones=zones, expand=expand, swap=swap).items() if v}
         if opts: c["opts"] = opts
-        c["key"] = render_key(c)
         c["out"] = f"{cache}/{c['key'][:2]}/{c['key']}.wav"
     return clips
 

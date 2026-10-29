@@ -44,6 +44,8 @@ SOURCES_DIR = get("VANI_SOURCES", os.path.dirname(ROOT))
 STOTRA_SANGRAHAH = get("VANI_STOTRA_SANGRAHAH", os.path.join(SOURCES_DIR, "stotra-sangrahah"))
 PUJA_VIDHANAM = get("VANI_PUJA_VIDHANAM", os.path.join(SOURCES_DIR, "puja-vidhanam"))
 GITA = get("VANI_GITA", os.path.join(SOURCES_DIR, "gita"))
+ADHYATMA = get("VANI_ADHYATMA", os.path.join(SOURCES_DIR, "StotraSamhita", "AdhyatmaRamayanam", "TeX"))
+MAHABHARATAM = get("VANI_MAHABHARATAM", os.path.join(SOURCES_DIR, "StotraSamhita", "Mahabharatam", "parvas"))
 FONTS = get("VANI_FONTS", os.path.join(STOTRA_SANGRAHAH, "fonts")) + "/"
 
 TECTONIC = get("VANI_TECTONIC", "tectonic")

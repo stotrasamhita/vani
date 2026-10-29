@@ -3,7 +3,7 @@
 Edit this file (not the scripts) to add or drop texts. Changes take effect on the next
 `pipeline/run.sh`: only verses whose text or meter changed are re-rendered (see build_shard).
 """
-from config import STOTRA_SANGRAHAH, PUJA_VIDHANAM, GITA
+from config import STOTRA_SANGRAHAH, PUJA_VIDHANAM, GITA, ADHYATMA, MAHABHARATAM
 
 SOURCES = [  # (glob, collection, group) -- group replaces the parent folder as the id prefix
     (f"{STOTRA_SANGRAHAH}/stotras/**/*.tex", "stotras", None),
@@ -15,7 +15,7 @@ SOURCES = [  # (glob, collection, group) -- group replaces the parent folder as 
     (f"{PUJA_VIDHANAM}/kathas/varalakshmi-vratam/varalakshmi-vrata-katha-bhavishya-puranam.tex", "kathas", None),
 ]
 
-EXCLUDE_DIRS = ["/adhyatma-ramayana-stotras/"]
+EXCLUDE_DIRS = []
 EXCLUDE_STOTRAS = {
     "stotras/hanuman/hanumanchalisa",                  # Awadhī, not Sanskrit
     "stotras/krishna/bhajagovindam", "stotras/krishna/bhajagovindamlaghu",   # mātrā meter
@@ -29,6 +29,11 @@ RENDER_FLAGS = {"", "HYPERMETRIC"}   # verse flags rendered as-is; others go thr
 # meter (MISMATCH -> the detected meter, tag DETECTED; the rest -> nearest-length reference, tag
 # FALLBACK). Colophons and uvāca lines are rendered with the gadya reference and never held back.
 PROSE_MAX = 0.10
+# Texts whose prose is part of the recitation (e.g. an acrostic note): rendered and shown on a slide.
+# Texts whose source has extra verses after the closing colophon: the chant stops at the colophon.
+STOP_AT_COLOPHON = {"stotras/krishna/guruvatapurishapancharatnam", "stotras/big/kaishikapuranam",
+                    "stotras/hanuman/hanumatpancharatnam"}
+PROSE_RENDER = {"stotras/shatanama/venkateshaashtottarashatanamastotram"}
 
 
 def _parts(path, macro, lead=()):
@@ -62,3 +67,15 @@ PIECES += [(f"{GITA}/mahatmyam-padma-puranam.tex", "gita-padma", "gitapadma", f"
             dict(part=p, headings=True, zones=True, expand=PURANA_MACROS))
            for k, p in enumerate(_parts(f"{GITA}/mahatmyam-padma-puranam.tex", "sect",
                                         ("\\ganapatyadiDhyanam", "\\padmaPuranam")), 1)]
+
+# Adhyātma Rāmāyaṇa (one text per sarga, 7 kāṇḍas) and Virāṭa Parva (one text per adhyāya); presentation in
+# slides/texts.tsv: work above the title, kāṇḍa/parva as the title, sarga/adhyāya below it (and in the verse header).
+KANDAS = [("bala", "Bala"), ("ayodhya", "Ayodhya"), ("aranya", "Aranya"), ("kishkindha", "Kishkindha"),
+          ("sundara", "Sundara"), ("yuddha", "Yuddha"), ("uttara", "Uttara")]
+PIECES += [(f"{ADHYATMA}/Mahatmyam.tex", "adhyatma", "adhyatma", "00mahatmyam", {})]
+for _k, (_slug, _file) in enumerate(KANDAS, 1):
+    PIECES += [(f"{ADHYATMA}/{_file}Kanda.tex", "adhyatma", "adhyatma", f"{_k}{_slug}{n:02d}", dict(part=p, headings=True))
+               for n, p in enumerate(_parts(f"{ADHYATMA}/{_file}Kanda.tex", "sect"), 1)]
+_VIRATA = f"{MAHABHARATAM}/04-virāṭaparva.tex"
+PIECES += [(_VIRATA, "mahabharatam", "virata", f"adhyaya{n:02d}", dict(part=p, headings=True))
+           for n, p in enumerate(_parts(_VIRATA, "chapter"), 1)]

@@ -54,10 +54,16 @@ def loudnorm(src, dst, lufs):
                     "-b:a", "192k", dst], check=True)
 
 
+NOTED = {l.split("\t")[0] for l in open(os.path.join(os.path.dirname(__file__), "..", "slides", "info.tsv"),
+                                       encoding="utf-8").read().splitlines()[1:] if l.split("\t")[1:2] == ["story"]}
+
+
 def mix(folder, a):
     full = [f for f in glob.glob(os.path.join(folder, "*_full*.mp3")) if re.search(r"_full(_FALLBACK)?\.mp3$", f)]
     assert len(full) == 1, f"{folder}: expected one _full mp3, found {full}"
     chant, sr = librosa.load(full[0], sr=None, mono=True)
+    stotra = "/".join(os.path.normpath(folder).split(os.sep)[-3:])
+    tail_cycles = a.tail_cycles + (2 if stotra in NOTED else 0)     # longer drone tail under the video's closing note
     # read only the stretch of drone this text needs (the recording may be long), then retune by
     # resampling: target rate sr*drone_sa/sa played back at sr lowers the pitch by that ratio
     ratio = a.drone_sa / a.sa if a.drone_sa else 1.0
@@ -70,7 +76,7 @@ def mix(folder, a):
         P = a.period * a.drone_sa / a.sa if a.drone_sa else a.period   # retuning down plays slower: longer cycle
         lead = int(round(a.lead_cycles * P * sr))
         rest = (-len(chant) / sr) % P                                # finish the current cycle
-        tail = int(round((rest + a.tail_cycles * P) * sr))
+        tail = int(round((rest + tail_cycles * P) * sr))
     else:
         lead, tail = int(a.lead * sr), int(a.tail * sr)
     n = lead + len(chant) + tail
@@ -79,7 +85,7 @@ def mix(folder, a):
     dr *= 10 ** (gain_db / 20)
     env = np.ones(n)
     fi = int(1.5 * sr); env[:fi] = np.linspace(0, 1, fi) ** 2
-    fo = int(round(a.tail_cycles * P * sr)) if a.period else tail
+    fo = int(round(tail_cycles * P * sr)) if a.period else tail
     env[-fo:] = np.linspace(1, 0, fo) ** 2
     out = dr * env
     out[lead:lead + len(chant)] += chant

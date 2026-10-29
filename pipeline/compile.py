@@ -28,7 +28,7 @@ SPEAKER = "सम्पूर्णपारायणम्"
 
 
 def shard_clips(shard, stotra):
-    return sorted((c for c in shard if c["stotra"] == stotra), key=lambda c: c["seq"])
+    return sorted((c for c in shard if c["stotra"] == stotra), key=lambda c: c.get("order", c["seq"]))
 
 
 def part(shard, stotra, label, pick=None, title_only=False, nosplit=False):

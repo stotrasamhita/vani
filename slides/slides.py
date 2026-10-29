@@ -55,6 +55,21 @@ def _texts():
 
 
 TEXTS = _texts()
+
+
+def _info():
+    """info.tsv: stotra -> {when, source, story: str, line: [str]} for the plain-language slide shown after the title."""
+    out = {}
+    for l in open(os.path.join(os.path.dirname(__file__), "info.tsv"), encoding="utf-8").read().splitlines()[1:]:
+        r = l.split("\t")
+        if len(r) < 3: continue
+        d = out.setdefault(r[0], {"line": []})
+        if r[1] == "line": d["line"].append(r[2])
+        else: d[r[1]] = r[2]
+    return out
+
+
+INFO = _info()
 if "Subrahmanya" in COMPOSERS: COMPOSERS["Composer:Subrahmanya"] = COMPOSERS["Subrahmanya"]   # known source typo
 
 
@@ -138,7 +153,7 @@ def _rule(y):
             rf"  \fill[acc] ([yshift={y}in]current page.center) circle (2.2pt);" "\n")
 
 
-def title_tex(pal, title, composer=None, chandas=None, title_rom=None, speaker=None, source=None):
+def title_tex(pal, title, composer=None, chandas=None, title_rom=None, speaker=None, source=None, note=None):
     """title: Devanāgarī. composer (author) shows above the framed title; speaker ("इन्द्रकृतम्")
     inside the frame below it; chandas and source ("मूलम् — …") as small lines below the frame."""
     def pair(deva, rom, size=(24, 30), isize=(15, 19)):   # Devanāgarī over IAST, as one tabular cell
@@ -149,8 +164,10 @@ def title_tex(pal, title, composer=None, chandas=None, title_rom=None, speaker=N
         rows.append(pair(f"छन्दः — {chandas}", "Chandaḥ — " + " · ".join(cap(iast(m)) for m in chandas.split(" · "))))
     if source:
         rows.append(pair(f"मूलम् — {source}", f"Mūlam — {cap(iast(source))}", (20, 25), (13, 16)))
+    if note:                                            # English line (e.g. when the observance is performed)
+        rows.append(rf"{{\color{{acc}}\iast\fontsize{{21}}{{26}}\selectfont {note.replace('&', chr(92) + '&')}}}")
     sp = 0.5 if speaker else 0.0                        # extra frame height for the speaker line
-    up = 0.2 * bool(speaker) + 0.15 * (len(rows) > 1)  # recentre the whole block
+    up = 0.2 * bool(speaker) + 0.15 * (len(rows) > 1) + 0.2 * bool(note)  # recentre the whole block
     y = lambda v: f"{v + up:.2f}"
     s = _preamble(pal)
     s += (r"  \node[anchor=north,yshift=-0.7in,text=acc] at (current page.north)"
@@ -173,6 +190,37 @@ def title_tex(pal, title, composer=None, chandas=None, title_rom=None, speaker=N
     return s + END
 
 
+KANDA = ["बालकाण्डम्|Bālakāṇḍam", "अयोध्याकाण्डम्|Ayodhyākāṇḍam", "अरण्यकाण्डम्|Araṇyakāṇḍam",
+         "किष्किन्धाकाण्डम्|Kiṣkindhākāṇḍam", "सुन्दरकाण्डम्|Sundarakāṇḍam", "युद्धकाण्डम्|Yuddhakāṇḍam",
+         "उत्तरकाण्डम्|Uttarakāṇḍam"]
+PARVA = ["आदिपर्व|Ādiparva", "सभापर्व|Sabhāparva", "वनपर्व|Vanaparva", "विराटपर्व|Virāṭaparva",
+         "उद्योगपर्व|Udyogaparva", "भीष्मपर्व|Bhīṣmaparva", "द्रोणपर्व|Droṇaparva", "कर्णपर्व|Karṇaparva",
+         "शल्यपर्व|Śalyaparva", "सौप्तिकपर्व|Sauptikaparva", "स्त्रीपर्व|Strīparva", "शान्तिपर्व|Śāntiparva",
+         "अनुशासनपर्व|Anuśāsanaparva", "आश्वमेधिकपर्व|Āśvamedhikaparva", "आश्रमवासिकपर्व|Āśramavāsikaparva",
+         "मौसलपर्व|Mausalaparva", "महाप्रस्थानिकपर्व|Mahāprasthānikaparva", "स्वर्गारोहणपर्व|Svargārohaṇaparva"]
+SHATAKA = ["आर्याशतकम्|Āryā-śatakam", "पादारविन्दशतकम्|Pādāravinda-śatakam", "स्तुतिशतकम्|Stuti-śatakam",
+           "कटाक्षशतकम्|Kaṭākṣa-śatakam", "मन्दस्मितशतकम्|Mandasmita-śatakam"]
+# texts whose verses carry a source reference {a-b-c}: kind -> (names of a, label of b)
+LOCATED = {"stotras/rama/gayatriramayanam": ("ramayana", KANDA, "सर्गः", "Sarga"),
+           "stotras/dhyanam/ramayanadhyanam": ("ramayana", KANDA, "सर्गः", "Sarga"),
+           "stotras/dhyanam/mahabharatadhyanam": ("bharata", PARVA, "अध्यायः", "Adhyāya"),
+           "stotras/shakti/mukasarah": ("muka", SHATAKA, None, None),
+           "stotras/krishna/saptashlokigita": ("gita", None, "अध्यायः", "Adhyāya")}   # ref = (adhyāya, śloka)
+
+
+def locator(stotra, ref):
+    """(Devanāgarī, IAST, verse number) for a source reference, or None for texts without locators."""
+    spec = LOCATED.get(stotra)
+    if not spec or not ref: return None
+    _, names, lab_d, lab_r = spec
+    if names is None:                       # Gītā: "<yoga> · अध्यायः N" above the verse, the śloka number at its end
+        t = TEXTS[f"gita/chapter{ref[0]:02d}"]["title"]
+        return f"{t} · {lab_d} {str(ref[0]).translate(DIGITS)}", f"{cap(iast(t))} · {lab_r} {ref[0]}", ref[1]
+    nd, nr = names[ref[0] - 1].split("|")
+    if lab_d is None: return nd, nr, ref[-1]
+    return f"{nd} · {lab_d} {str(ref[1]).translate(DIGITS)}", f"{nr} · {lab_r} {ref[1]}", ref[-1]
+
+
 def verse_lines(display, num):
     """Display pādas -> (Devanāgarī lines, IAST lines) with daṇḍas and the verse number."""
     n = len(display)
@@ -187,7 +235,7 @@ def verse_lines(display, num):
     return dev, rom
 
 
-def verse_tex(pal, title, display, num, title_rom=None, uvaca=None):
+def verse_tex(pal, title, display, num, title_rom=None, uvaca=None, loc=None, meaning=None):
     dev, rom = verse_lines(display, num)
     size, lead = (42, 56) if len(dev) <= 4 else (34, 46)
     isize, ilead = (21, 27) if len(rom) <= 4 else (17, 22)
@@ -202,12 +250,17 @@ def verse_tex(pal, title, display, num, title_rom=None, uvaca=None):
           rf"  \fill[acc] ([yshift=-1.55in]current page.north) circle (2.2pt);" "\n")
     # verse block: Devanāgarī then IAST, stacked and centred between header rule and footer
     s += (rf"  \node[anchor=center,yshift=-0.35in,text=txt,align=center] at (current page.center)"
-          rf" {{\adjustbox{{max width=14.2in,max totalheight=6.2in}}{{\begin{{tabular}}{{c}}"
+          rf" {{\adjustbox{{max width=14.2in,max totalheight={5.6 if loc else 6.2}in}}{{\begin{{tabular}}{{c}}"
           + (rf"{{\color{{acc}}\deva\fontsize{{26}}{{32}}\selectfont {uvaca}}}\\[0.05em]"
              rf"{{\color{{acc}}\iast\itshape\fontsize{{15}}{{19}}\selectfont {cap(iast(uvaca))}}}\\[0.7em]"
              if uvaca else "") +
+          (rf"{{\color{{acc}}\deva\fontsize{{26}}{{32}}\selectfont {loc[0]}}}\\[0.05em]"
+           rf"{{\color{{acc}}\iast\itshape\fontsize{{16}}{{20}}\selectfont {loc[1]}}}\\[0.7em]"
+           if loc else "") +
           rf"{{\deva\fontsize{{{size}}}{{{lead}}}\selectfont \begin{{tabular}}{{c}}{dl}\end{{tabular}}}}\\[0.9em]"
           rf"{{\color{{txt!82!bge}}\iast\itshape\fontsize{{{isize}}}{{{ilead}}}\selectfont \begin{{tabular}}{{c}}{rl}\end{{tabular}}}}"
+          + (r"\\[44pt]{\color{acc}\iast\fontsize{24}{31}\selectfont \begin{tabular}{c}"
+             + r"\\[0.1em]".join(_sentences(meaning)) + r"\end{tabular}}" if meaning else "") +
           rf"\end{{tabular}}}}}};" "\n")
     return s + END
 
@@ -248,6 +301,111 @@ def split_verse_tex(pal, head, head_rom, display, split, num, uvaca=None):
             + END)
 
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+KANCHI = {"stotras/guru/kanchikamakotiguruparamparastava": "guru_verses.tsv",      # texts with portrait slides (guru_panel) -> verse map
+          "stotras/guru/jagadgururatnamala": "ratnamala_verses.tsv"}
+
+
+def _tsv(name):
+    rows = [l.rstrip("\n").split("\t") for l in open(os.path.join(os.path.dirname(__file__), name), encoding="utf-8")]
+    return [dict(zip(rows[0], r + [""] * (len(rows[0]) - len(r)))) for r in rows[1:] if r and r[0]]
+
+
+def _words(deva):
+    return " ".join(cap(iast(w)) for w in deva.split())
+
+
+def guru_panel(stotra, num):
+    """Left-hand panel for a Kāñcī-guruparamparā verse: portraits of the ācāryas the verse praises (cropped by
+    pipeline/kanchi_portraits.py into work/kanchi), or the lineage mosaic, or a plain list of names.
+    guru_verses.tsv maps verse -> kind/pontiffs/labels; kanchi_pontiffs.tsv holds the names."""
+    if stotra not in KANCHI or not num: return None          # num: verse number, or "u01" for the unnumbered extra verses
+    row = next((r for r in _tsv(KANCHI[stotra]) if r["verse"] == str(num)), None)
+    if not row: return None
+    from PIL import Image
+    P = {int(r["n"]): r for r in _tsv("kanchi_pontiffs.tsv")}
+    items = []
+    for tok in [x for x in row["pontiffs"].split(",") if x]:
+        if tok.startswith("fig:"):                            # a framed, captioned figure (not a pontiff): shown as is
+            f = f"{ROOT}/work/kanchi/figures/{tok[4:]}.png"
+            if os.path.exists(f):
+                w, h = Image.open(f).size; items.append(dict(img=f, ratio=w / h, fig=True))
+            continue
+        n = int(tok); p = P[n]; img = f"{ROOT}/work/kanchi/{n:02d}.jpg"
+        if not os.path.exists(img): continue                  # no portrait supplied yet for this pontiff
+        w, h = Image.open(img).size
+        roman = " " + ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII"][int(p["numeral"] or 0)] if p["numeral"] else ""
+        hy = lambda t: re.sub(r"^(श्रीमद्|श्री|Śrīmad|Śrī) ", r"\1-", t)           # श्री-/श्रीमद्- is hyphenated, the rest of the name run together
+        items.append(dict(img=img, ratio=w / h, deva=hy(p["name"]).replace(" ", "") + (" " + p["numeral"].translate(DIGITS) if p["numeral"] else ""),
+                          rom=hy(_words(p["name"])) + roman, sub=f"पीठाधिपतिः · {str(n).translate(DIGITS)}", subrom=f"Pīṭhādhipatiḥ · {n}"))
+    labels = [l for l in row["labels"].split(";") if l]
+    if row["kind"] in ("portrait",) and not items: return None
+    return dict(kind=row["kind"], items=items, labels=labels, also=labels[0] if row["kind"] == "portrait" and labels else "")
+
+
+def guru_verse_tex(pal, head, head_rom, display, num, panel):
+    """Verse slide with the ācārya portraits (left) and the verse, Devanāgarī over IAST (right). One verse
+    per slide; the ācārya's name stays on the slide beside/below the portrait."""
+    dev, rom = verse_lines(display, num)
+    L = r"\node[anchor=north,text=txt,align=center] at ([xshift=3.55in,yshift={y}in]current page.north west) {{{body}}};" "\n"
+    s = _preamble(pal) + _header(head, head_rom)
+    s += r"  \draw[acc,line width=0.5pt,opacity=0.35] ([xshift=6.75in,yshift=-1.95in]current page.north west) -- ++(0,-6.2in);" "\n"
+    kind, items = panel["kind"], panel["items"]
+
+    def frame(name, img, h, x, y, anchor="north"):
+        return (rf"  \node[anchor={anchor},inner sep=3pt,draw=acc,line width=1.4pt,name={name}] at "
+                rf"([xshift={x}in,yshift={y}in]current page.north west) {{\includegraphics[height={h}in]{{{img}}}}};" "\n"
+                rf"  \draw[acc,line width=0.5pt] ([shift={{(-6pt,-6pt)}}]{name}.south west) rectangle ([shift={{(6pt,6pt)}}]{name}.north east);" "\n")
+
+    def pair(d, r, ds=24, rs=14):
+        return (rf"\begin{{tabular}}{{c}}{{\deva\fontsize{{{ds}}}{{{int(ds * 1.25)}}}\selectfont {d}}}\\[0.05em]"
+                rf"{{\color{{acc}}\iast\itshape\fontsize{{{rs}}}{{{int(rs * 1.25)}}}\selectfont {r}}}\end{{tabular}}")
+
+    if kind == "portrait" and len(items) == 1 and items[0].get("fig"):
+        s += rf"  \node[anchor=north] at ([xshift=3.55in,yshift=-2.0in]current page.north west) {{\includegraphics[height=5.9in]{{{items[0]['img']}}}}};" "\n"
+    elif kind == "portrait" and len(items) > 1 and all(i.get("fig") for i in items):
+        h = 4.5; gap = 0.25; x = 3.55 - (sum(h * i["ratio"] for i in items) + gap * (len(items) - 1)) / 2
+        for k, it in enumerate(items):
+            s += frame(f"p{k}", it["img"], h, x, -2.7, "north west"); x += h * it["ratio"] + gap
+    elif kind == "portrait" and len(items) == 1:
+        it = items[0]; h = 4.2 if panel["also"] else 4.5
+        s += frame("p0", it["img"], h, 3.55, -2.0)
+        body = (rf"\adjustbox{{max width=5.5in}}{{{pair(it['deva'], it['rom'])}}}\\[0.45em]"
+                rf"{{\color{{txt!80!bge}}\deva\fontsize{{15}}{{19}}\selectfont {it['sub']}}}")
+        if panel["also"]: body += rf"\\[0.5em]\adjustbox{{max width=5.5in}}{{{pair(panel['also'], cap(iast(panel['also'])), 17, 11)}}}"
+        s += L.format(y=-(2.0 + h + 0.3), body=body)
+    elif kind == "portrait":
+        n = len(items); h = {2: 2.8, 3: 1.75}[n]; y = 2.0
+        for k, it in enumerate(items):
+            w = h * it["ratio"]; yy = -(y + k * (h + 0.3))
+            s += frame(f"p{k}", it["img"], h, 0.95, yy, "north west")
+            tw = 6.4 - (0.95 + w) - 0.45
+            s += (rf"  \node[anchor=west,text=txt,align=left] at ([xshift={0.95 + w + 0.35}in,yshift={yy - h / 2}in]current page.north west)"
+                  rf" {{\begin{{minipage}}{{{tw}in}}\adjustbox{{max width={tw}in}}{{\begin{{tabular}}{{l}}"
+                  rf"{{\deva\fontsize{{20}}{{25}}\selectfont {it['deva']}}}\\[0.05em]"
+                  rf"{{\color{{acc}}\iast\itshape\fontsize{{12}}{{15}}\selectfont {it['rom']}}}\\[0.25em]"
+                  rf"{{\color{{txt!80!bge}}\deva\fontsize{{13}}{{16}}\selectfont {it['sub']}}}\end{{tabular}}}}\end{{minipage}}}};" "\n")
+    elif kind == "mosaic":
+        lab = panel["labels"]; h = 4.1 if len(lab) <= 1 else 3.4 if len(lab) <= 2 else 2.7
+        s += frame("m0", f"{ROOT}/work/kanchi/mosaic.png", h, 3.55, -2.0)
+        body = "\\\\[0.3em]".join(rf"\adjustbox{{max width=5.5in}}{{{pair(l, cap(iast(l)) if len(lab) == 1 else _words(l), 22 if len(lab) == 1 else 18, 14 if len(lab) == 1 else 12)}}}"
+                                  for l in lab)
+        s += L.format(y=-(2.0 + h + 0.3), body=body)
+    else:                                                    # plain list of names
+        lab = panel["labels"]
+        body = "\\\\[1.0em]".join(pair(l, _words(re.sub(r" \(.*\)", "", l)) + (" (" + cap(iast(re.search(r"\((.*)\)", l).group(1))) + ")" if "(" in l else ""), 20, 12)
+                                  for l in lab)
+        s += L.format(y=-2.0, body=body)
+    s += r"  \node[anchor=south west,xshift=6.95in,yshift=0.72in,text=txt,opacity=0.5] at (current page.south west) {\iast\fontsize{9}{11}\selectfont Portraits: github.com/jyotisham/adyatithi}; " "\n"
+    dl = r"\\[0.45em]".join(dev); rl = r"\\[0.2em]".join(rom)
+    s += (r"  \node[anchor=center,text=txt,align=center] at ([xshift=11.1in,yshift=-5.05in]current page.north west)"
+          rf" {{\adjustbox{{max width=8.5in,max totalheight=6.0in}}{{\begin{{tabular}}{{c}}"
+          rf"{{\deva\fontsize{{34}}{{46}}\selectfont \begin{{tabular}}{{c}}{dl}\end{{tabular}}}}\\[1.0em]"
+          rf"{{\color{{txt!82!bge}}\iast\itshape\fontsize{{19}}{{25}}\selectfont \begin{{tabular}}{{c}}{rl}\end{{tabular}}}}"
+          r"\end{tabular}}};" "\n")
+    return s + END
+
+
 def colophon_tex(pal, title, text, title_rom=None, end=True):
     """Closing colophon (इति …): wrapped, centred, smaller and in gold; ends with ॥ (end=False: the opening
     "अथ …" heading, no daṇḍa)."""
@@ -264,6 +422,19 @@ def colophon_tex(pal, title, text, title_rom=None, end=True):
           rf" {{\adjustbox{{max totalheight=6.0in}}{{\parbox{{12.5in}}{{\centering"
           rf"{{\deva\fontsize{{{size}}}{{{lead}}}\selectfont {text}{' ॥' if end else ''}\par}}\vspace{{0.8em}}"
           rf"{{\color{{txt!82!bge}}\iast\itshape\fontsize{{{isize}}}{{{ilead}}}\selectfont {cap(iast(text))}{' ||' if end else ''}\par}}}}}}}};" "\n")
+    return s + END
+
+
+def _sentences(t):
+    return [x.replace("&", r"\&") for x in re.split(r"(?<=[.])\s+", t.strip())]
+
+
+def note_tex(pal, head, head_rom, text):
+    """Closing slide: a short English note, one sentence per line, in gold."""
+    s = _preamble(pal) + _header(head, head_rom)
+    s += (r"  \node[anchor=center,yshift=-0.35in,text=acc,align=center] at (current page.center)"
+          r" {\adjustbox{max width=13.5in}{\iast\itshape\fontsize{30}{40}\selectfont\begin{tabular}{c}"
+          + r"\\[0.3em]".join(_sentences(text)) + r"\end{tabular}}};" "\n")
     return s + END
 
 

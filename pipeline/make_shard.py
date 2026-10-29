@@ -16,7 +16,14 @@ import argparse, collections, glob, json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from build_shard import build, n_ak                            # noqa: E402
 
-from corpora import SOURCES, PIECES, EXCLUDE_DIRS, EXCLUDE_STOTRAS, RENDER_FLAGS, PROSE_MAX   # noqa: E402
+from corpora import SOURCES, PIECES, EXCLUDE_DIRS, EXCLUDE_STOTRAS, RENDER_FLAGS, PROSE_MAX, PROSE_RENDER, STOP_AT_COLOPHON   # noqa: E402
+
+
+DEDUPE_STOTRAS = {"stotras/guru/kanchikamakotiguruparamparastava"}
+DROP_RENUMBER = {"guru_kanchikamakotiguruparamparastava_v073": "stotras/guru/kanchikamakotiguruparamparastava"}   # user: omit this appendix verse; later verse numbers close the gap
+
+
+PLAY_BEFORE = [("guru_kanchikamakotiguruparamparastava_u01", "guru_kanchikamakotiguruparamparastava_v073")]   # play the 69th Jagadguru's verse before the 70th's; "order" changes playback only, "seq" still indexes the source text
 
 
 def main():
@@ -35,11 +42,16 @@ def main():
                 text = " ".join(c["padas"])
                 why = ("excluded stotra" if c["stotra"] in EXCLUDE_STOTRAS else "") \
                     if c["flag"] in ("COLOPHON", "UVACA", "HEADING") else \
-                      ("label" if c["meter"] == "gadya" and (re.match(r"इति|इत्य", text) or n_ak(text) < 12) else
+                      ("" if c["flag"] == "PROSE" and c["stotra"] in PROSE_RENDER else
+                       "label" if c["meter"] == "gadya" and (re.match(r"इति|इत्य", text) or n_ak(text) < 12) else
                        "prose" if c["meter"] == "gadya" else
                        "excluded stotra" if c["stotra"] in EXCLUDE_STOTRAS else
                        "" if c["flag"] in RENDER_FLAGS else "flag")
                 rows.append((c, why))
+    for t in STOP_AT_COLOPHON:
+        end = min((c["seq"] for c, _ in rows if c["stotra"] == t and c["flag"] == "COLOPHON"), default=None)
+        rows = [(c, "after colophon" if c["stotra"] == t and end and c["seq"] > end and not why else why)
+                for c, why in rows]
     n, prose = collections.Counter(), collections.Counter()   # prose is recited content we don't render
     for c, why in rows:
         if why in ("", "flag", "prose"): n[c["stotra"]] += 1; prose[c["stotra"]] += why == "prose"
@@ -50,7 +62,22 @@ def main():
             c["flag"] += ",DETECTED" if c["flag"] == "MISMATCH" else ",FALLBACK"; rows[i] = (c, "")
         elif not why and c["stotra"] in partial:
             rows[i] = (c, "incomplete text")
+    seen = set()                                   # in these texts a verse repeated (a starred variant differing only in hyphens) is chanted once
+    for i, (c, why) in enumerate(rows):
+        if why or c["stotra"] not in DEDUPE_STOTRAS or c["flag"] in ("COLOPHON", "UVACA", "HEADING"): continue
+        k = (c["stotra"], re.sub(r"[\s\-\u2010\u2011|।॥\d]", "", " ".join(c["padas"])))
+        if k in seen: rows[i] = (c, "repeated verse")
+        seen.add(k)
+    rows = [(c, "omitted verse" if c["id"] in DROP_RENUMBER else why) for c, why in rows]
     keep = [c for c, why in rows if not why]
+    for gone, stotra in DROP_RENUMBER.items():
+        g = int(gone.rsplit("_v", 1)[1])
+        for c in keep:
+            m = re.search(r"_v(\d+)$", c["id"])
+            if c["stotra"] == stotra and m and int(m.group(1)) > g: c["id"] = c["id"][:m.start(1)] + f"{int(m.group(1)) - 1:03d}"
+    by = {c["id"]: c for c in keep}
+    for first, second in PLAY_BEFORE:
+        if first in by and second in by: by[first]["order"], by[second]["order"] = by[second]["seq"], by[first]["seq"]
     ids = collections.Counter(c["id"] for c in keep)
     dup = [k for k, v in ids.items() if v > 1]
     if dup: sys.exit(f"duplicate clip ids: {dup[:10]}")

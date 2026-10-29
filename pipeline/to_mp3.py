@@ -51,8 +51,8 @@ def publish(stotra, clips, root, pause, bitrate):
     slug = os.path.basename(stotra)
     tsv, full = os.path.join(d, slug + ".tsv"), os.path.join(d, slug + "_full" + sfx + ".mp3")
     prev = old_keys(tsv)
-    clips.sort(key=lambda c: c["seq"])
-    if prev == {c["id"]: c["key"] for c in clips} and os.path.exists(full) \
+    clips.sort(key=lambda c: c.get("order", c["seq"]))
+    if list(prev.items()) == [(c["id"], c["key"]) for c in clips] and os.path.exists(full) \
             and all(os.path.exists(os.path.join(d, c["id"] + ".mp3")) for c in clips):
         return "unchanged", []                       # fast path: published copy matches the shard
     ids = {c["id"] for c in clips}
@@ -72,7 +72,7 @@ def publish(stotra, clips, root, pause, bitrate):
         rows.append([c["id"], c["key"], c["meter"], c.get("detected", ""), c.get("declared", ""),
                      c.get("flag", ""), f"{sf.info(c['out']).duration:.2f}", " | ".join(c["padas"])])
     if not rows: return "empty", missing
-    if changed or not os.path.exists(full) or set(prev) != {r[0] for r in rows}:
+    if changed or not os.path.exists(full) or list(prev) != [r[0] for r in rows]:
         parts, sr = [], None
         for c in clips:
             if c["id"] in missing: continue
